@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 project(borderDetection)
 
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_BUILD_TYPE Debug)
 
 #寻找OpenCV库
 find_package(OpenCV)
