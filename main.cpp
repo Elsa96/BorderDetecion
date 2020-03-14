@@ -41,15 +41,18 @@ void HSVFilter(Mat inputImage, Mat &outputImage);
 void borderHough(Mat inputImage, Mat &outputImage);
 void getCrossPointAndIncrement(Vec4f LineA, Vec4f LineB, vector<Vertex> &vertexSet, int imgW, int imgH);
 void drawLines(vector<Vertex> top4vertexSet, Mat &outputImage);
+void drawBox(vector<Vertex> vertexSet, Mat &outputImage);
+void drawPoints(vector<Vertex> vertexSet, Mat &outputImage);
 //special case
-void threeSides(vector<Vec4f> lines, vector<Vertex> &vertexSet, vector<Vertex> &top6vertexSet, int imgW, int imgH);
+void mostIntersections(vector<Vec4f> lines, vector<Vertex> &topVertexSet, int topVertexNum, int imgW, int imgH);\
+void pointColor(Mat image, vector<Vertex> inputVertexSet, vector<Vertex> &outputVertexSet);
 //others
 void lineCluster(vector<Point2f> kbPoints, vector<Point2f> &result);
 Point2f getLinePoints(Vec4f line, vector<Point2f> &LinePoints);
 
 
 int main() {
-    Mat srcImage = imread("../images/yellowBorder11.jpg");
+    Mat srcImage = imread("../images/yellowBorder21.jpg");
 /*    namedWindow("原始图像", WINDOW_NORMAL);
     resizeWindow("原始图像", 1000, 1000);
     imshow("原始图像", srcImage);*/
@@ -94,7 +97,7 @@ void HSVFilter(Mat inputImage, Mat &outputImage){
 void borderHough(Mat inputImage, Mat &outputImage){
 
     vector<Vec4f> lines;
-    HoughLinesP(inputImage, lines, 1, CV_PI/180, 900, 500, 10);  //LSD算法kk
+    HoughLinesP(inputImage, lines, 1, CV_PI/180, 900, 500, 10);  //第五个参数：超过这个值才被检测出直线
 
     cout << "共检测到原始直线" << lines.size() << "条" << endl;
 
@@ -114,13 +117,19 @@ void borderHough(Mat inputImage, Mat &outputImage){
     Vec4f lineRight(imgW-gap-10,gap,imgW-gap,imgH-gap);//right
 
     //将画面上下两条边加进去
+    int linesNum = 20;  //TODO 参数linesNum
     vector<Vec4f> lines3SidesUD(lines);
-    lines3SidesUD.insert(lines3SidesUD.end(), 50, lineUp);
-    lines3SidesUD.insert(lines3SidesUD.end(), 50, lineDown);
+    lines3SidesUD.insert(lines3SidesUD.end(), linesNum, lineUp);
+    lines3SidesUD.insert(lines3SidesUD.end(), linesNum, lineDown);
     //将画面左右两条边加进去
     vector<Vec4f> lines3SidesLR(lines);
-    lines3SidesLR.insert(lines3SidesLR.end(), 50, lineLeft);
-    lines3SidesLR.insert(lines3SidesLR.end(), 50, lineRight);
+    lines3SidesLR.insert(lines3SidesLR.end(), linesNum, lineLeft);
+    lines3SidesLR.insert(lines3SidesLR.end(), linesNum, lineRight);
+    //将画面上下左右都加进去
+    vector<Vec4f> lines2Sides(lines3SidesUD);
+    lines2Sides.insert(lines2Sides.end(), linesNum, lineLeft);
+    lines2Sides.insert(lines2Sides.end(), linesNum, lineRight);
+    cout << "直线:" << lines2Sides.size() << "条" << endl;
 
     Mat tempImage = outputImage.clone();
     //    Mat tempImage(outputImage.rows, outputImage.cols, CV_8UC1);
@@ -143,159 +152,131 @@ void borderHough(Mat inputImage, Mat &outputImage){
         line(outputImage, Point2f(l[0], l[1]), Point2f(l[2], l[3]), Scalar(0,255,0), 3, LINE_AA);
     }*/
 
-    //存储hough直线的交点，并判断交点相交次数
-    vector<Vertex> vertexSet;
-    for (unsigned int i = 0; i<lines.size(); i++)
-    {
-        for (unsigned int j = i + 1; j<lines.size(); j++)
-        {
-            getCrossPointAndIncrement(lines[i], lines[j], vertexSet, imgW, imgH);
-
-        }
-    }
-
-    //绘制所有交点
-    for (int i = 0; i < vertexSet.size(); ++i) {
-//        cout << "(" << vertexSet[i].x << ", " << vertexSet[i].y << ")" << endl;
-//        circle(outputImage, Point(vertexSet[i].x, vertexSet[i].y), 10, Scalar(0, 0, 255), -1);
-    }
-
-/*
-    namedWindow("tempImage", WINDOW_NORMAL);
-    resizeWindow("tempImage", 1000, 1000);
-    imshow("tempImage", tempImage);
-*/
-
-
-    //找相交次数最多的4个点
-    int max = 0;
-    int maxUnder = -1;
     vector<Vertex> top4vertexSet;
-    while (top4vertexSet.size() < 4) {
-        max = 0;
-        for (int i = 0; i < vertexSet.size(); i++) {
-            if (vertexSet[i].crossTimes > max) {
-                max = vertexSet[i].crossTimes;
-                maxUnder = i;
-            }
-        }
-//        cout << vertexSet[maxUnder].crossTimes << endl;
-        top4vertexSet.push_back(vertexSet[maxUnder]);
-        vertexSet[maxUnder].crossTimes = -1;
+    mostIntersections(lines, top4vertexSet, 4, imgW, imgH);
+
+    //绘制相交次数最多的六个交点
+    cout << "交点坐标和相交次数：" << endl;
+    for (int i = 0; i < top4vertexSet.size(); i++) {
+        cout << "(" << top4vertexSet[i].x << "," << top4vertexSet[i].y <<")" << top4vertexSet[i].crossTimes << endl;
     }
 
     //判断有几条直线
-    vector<Vertex> vertexSet3;
-    vector<Vertex> top6vertexSet;
-    if(top4vertexSet[0].crossTimes > 4 * top4vertexSet[2].crossTimes){
-
-        cout << "只有三条直线" << endl;
-/*        //绘制两个交点
-        for (int i = 0; i < 2; i++) {
-        cout << "(" << top4vertexSet[i].x << "," << top4vertexSet[i].y <<")" << endl;
-//            cout << top4vertexSet[i].crossTimes << endl;
-            circle(outputImage, Point(top4vertexSet[i].x, top4vertexSet[i].y), 30, Scalar(255, 0, 255), -1);
-        }*/
-        int yGap = 500;
-        if(abs(top4vertexSet[0].y - top4vertexSet[1].y)< yGap) //若两交点y很接近，则取上下边界
-            threeSides(lines3SidesUD, vertexSet3, top6vertexSet, imgW, imgH);
-        else
-            threeSides(lines3SidesLR, vertexSet3, top6vertexSet, imgW, imgH);
-/*        //绘制交点
-        for (int i = 0; i < vertexSet3.size(); i++) {
-        cout << "(" << vertexSet3[i].x << "," << vertexSet3[i].y <<")" << endl;
-            circle(outputImage, Point(vertexSet3[i].x, vertexSet3[i].y), 30, Scalar(0, 0, 255), -1);
-        }*/
-/*        //绘制相交次数最多的六个交点
-        cout << "六个交点坐标：" << endl;
-        for (int i = 0; i < top6vertexSet.size(); i++) {
-            cout << "(" << top6vertexSet[i].x << "," << top6vertexSet[i].y <<")" << endl;
-            cout << top6vertexSet[i].crossTimes << endl;
-            circle(outputImage, Point(top6vertexSet[i].x, top6vertexSet[i].y), 30, Scalar(0, 0, 255), -1);
-        }*/
-
-
-        Mat hsvImage;
-        //bgr转hsv
-        cvtColor(outputImage, hsvImage, CV_BGR2HSV);
-
+    if(top4vertexSet[0].crossTimes > 4 * top4vertexSet[1].crossTimes){  //TODO 参数4
+        vector<Vertex> top9vertexSet;
+        cout << "只有两条直线，并相交" << endl;
+        mostIntersections(lines2Sides, top9vertexSet, 9, imgW, imgH);
+//        drawPoints(top9vertexSet, outputImage);
         vector<Vertex> vertexResult;
-        cout << "######################" << endl;
-        for (int i = 0; i < top6vertexSet.size(); ++i) {
-            int x = top6vertexSet[i].x;
-            int y = top6vertexSet[i].y;
-            //TODO 如何精简
-            if(x < 0)
-                top6vertexSet[i].x = 0;
-            if(x > imgW)
-                top6vertexSet[i].x = imgW;
-            if(y < 0)
-                top6vertexSet[i].y = 0;
-            if(y > imgH)
-                top6vertexSet[i].y = imgH;
-            int range = 25;
-            int flag = 0;
-            //注意不要超出画面边界
-            int xMin = x-range;
-            int xMax = x+range;
-            int yMin = y-range;
-            int yMax = y+range;
-            if(xMin < 0)
-                xMin = 0;
-            if(xMin > imgW)
-                xMin = imgW-10;
-            if(xMax < 0)
-                xMax = 10;
-            if(xMax > imgW)
-                xMax = imgW;
-            if(yMin < 0)
-                yMin = 0;
-            if(yMin > imgH)
-                yMin = imgH-10;
-            if(yMax < 0)
-                yMax = 10;
-            if(yMax > imgH)
-                yMax = imgH;
-            //看交点是否为黄色
-            for (int j = xMin; j < xMax ; j = j+5) {
-                for (int k = yMin; k < yMax; k = k+5) {
-                    int h = hsvImage.at<Vec3b>(k, j)[0];
-                    int s = hsvImage.at<Vec3b>(k, j)[1];
-                    int v = hsvImage.at<Vec3b>(k, j)[2];
-                    if((h > hmin && h < hmax) &&
-                       (s > smin && s < smax) &&
-                       (v > vmin && v < vmax)){
-                        vertexResult.push_back(top6vertexSet[i]);
-                        flag = 1;
-                        break;
+        pointColor(outputImage, top9vertexSet, vertexResult);
+        cout << "交点个数：" << vertexResult.size() << endl;
+        //TODO 还需考虑与边界相交的两个点在同一条边界的情况
+        int findPoint4 = 0;
+        int draw = 0;
+        for (int i = 0; i < vertexResult.size(); ++i) {
+            if(vertexResult[i].x < 2 *gap){
+                for (int j = 0; j < vertexResult.size(); ++j) {
+                    if(j != i){
+                        if(vertexResult[j].x < 2 * gap){
+                            drawBox(vertexResult, outputImage);
+                            findPoint4 = 1;
+                            draw = 1;
+                            break;
+                        }
+                        if(vertexResult[j].y < 2 * gap){
+                            Vertex newVertex(gap, gap);
+                            vertexResult.push_back(newVertex);
+                            findPoint4 = 1;
+                            break;
+                        }
+                        if(vertexResult[j].y > imgH - 2 * gap) {
+                            Vertex newVertex(gap, imgH - gap);
+                            vertexResult.push_back(newVertex);
+                            findPoint4 = 1;
+                            break;
+                        }
                     }
                 }
-                if(flag == 1)
-                    break;
             }
+            if(vertexResult[i].x > imgW - 2 * gap){
+                for (int j = 0; j < vertexResult.size(); ++j) {
+                    if(j != i){
+                        if(vertexResult[j].x > imgW - 2 * gap){
+                            drawBox(vertexResult, outputImage);
+                            findPoint4 = 1;
+                            draw = 1;
+                            break;
+                        }
+                        if(vertexResult[j].y < 2 * gap){
+                            Vertex newVertex(imgW - gap, gap);
+                            vertexResult.push_back(newVertex);
+                            findPoint4 = 1;
+                            break;
+                        }
+                        if(vertexResult[j].y > imgH - 2 * gap) {
+                            Vertex newVertex(imgW - gap, imgH - gap);
+                            vertexResult.push_back(newVertex);
+                            findPoint4 = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            if((vertexResult[i].y > imgH - 2 * gap) &&
+            (vertexResult[(i+1)%vertexResult.size()].y > imgH - 2 * gap)){
+                drawBox(vertexResult, outputImage);
+                draw = 1;
+                break;
+            }
+
+            if((vertexResult[i].y < 2 *gap) &&
+            (vertexResult[(i+1)%vertexResult.size()].y < 2 *gap)){
+                drawBox(vertexResult, outputImage);
+                draw = 1;
+                break;
+            }
+            if(findPoint4 == 1)
+                break;
+        }
+        if(draw == 0){
+            drawLines(vertexResult, outputImage);
+            drawPoints(vertexResult, outputImage);
+        }
+    }
+    else if(top4vertexSet[0].crossTimes < 1000){  //TODO 参数1000
+        cout << "只有两条直线，平行" << endl;
+        vector<Vertex> top4vertexSet_2;
+        mostIntersections(lines2Sides, top4vertexSet_2, 4, imgW, imgH);
+        if(top4vertexSet_2[0].crossTimes <= 4 * top4vertexSet_2[2].crossTimes){  //排除只有一条边的情况
+            drawLines(top4vertexSet_2, outputImage);
+            drawPoints(top4vertexSet_2, outputImage);
         }
 
+    }
+    else if(top4vertexSet[0].crossTimes > 4 * top4vertexSet[2].crossTimes){  //TODO 参数4
+        cout << "只有三条直线" << endl;
+        vector<Vertex> top6vertexSet;
+        int yGap = 500;  //TODO 参数yGap
+        if(abs(top4vertexSet[0].y - top4vertexSet[1].y)< yGap) //若两交点y很接近，则取上下边界
+            mostIntersections(lines3SidesUD, top6vertexSet, 6, imgW, imgH);
+        else
+            mostIntersections(lines3SidesLR, top6vertexSet, 6, imgW, imgH);
+
+        vector<Vertex> vertexResult;
+        pointColor(outputImage, top6vertexSet, vertexResult);
 
         cout << "交点个数为：" << vertexResult.size() << endl;
         //绘制直线
         drawLines(vertexResult, outputImage);
         //绘制交点
-        for (int i = 0; i < vertexResult.size(); i++) {
-//            cout << "(" << vertexResult[i].x << "," << vertexResult[i].y <<")" << endl;
-            circle(outputImage, Point(vertexResult[i].x, vertexResult[i].y), 30, Scalar(0, 0, 255), -1);
-        }
-
+        drawPoints(vertexResult, outputImage);
     }
     else{
         cout << "四条直线" << endl;
         //绘制直线
         drawLines(top4vertexSet, outputImage);
         //绘制最终的四个交点
-        for (int i = 0; i < top4vertexSet.size(); i++) {
-//        cout << "(" << top4vertexSet[i].x << "," << top4vertexSet[i].y <<")" << endl;
-            circle(outputImage, Point(top4vertexSet[i].x, top4vertexSet[i].y), 30, Scalar(0, 0, 255), -1);
-        }
-
+        drawPoints(top4vertexSet, outputImage);
     }
 
 }
@@ -314,8 +295,7 @@ void getCrossPointAndIncrement(Vec4f LineA, Vec4f LineB, vector<Vertex> &vertexS
     int x = (int)(round)(crossPoint.x);
     int y = (int)(round)(crossPoint.y);
 
-    int VertexGap = 10000;
-
+    int VertexGap = 40000; //TODO VerTexGap
 
     if (x >= -imgW/2 && x <= imgW * 1.5 && y >= -imgH/2 && y <= imgH * 1.5) {  //在图像区域内
         int i = 0;
@@ -372,8 +352,29 @@ void drawLines(vector<Vertex> top4vertexSet, Mat &outputImage){
     }
 }
 
-void threeSides(vector<Vec4f> lines, vector<Vertex> &vertexSet, vector<Vertex> &top6vertexSet, int imgW, int imgH){
+void drawPoints(vector<Vertex> vertexSet, Mat &outputImage){
+    for (int i = 0; i < vertexSet.size(); i++) {
+        cout << "(" << vertexSet[i].x << "," << vertexSet[i].y <<")" << vertexSet[i].crossTimes << endl;
+        circle(outputImage, Point(vertexSet[i].x, vertexSet[i].y), 30, Scalar(0, 0, 255), -1);
+    }
+}
 
+void drawBox(vector<Vertex> vertexSet, Mat &outputImage){
+
+    for (int i = 0; i < vertexSet.size(); i++) {
+        Point pt = Point(vertexSet[i].x, vertexSet[i].y);
+        Point pt1 = Point(vertexSet[(i + 1) % 3].x, vertexSet[(i + 1) % 3].y);
+        line(outputImage, pt, pt1, Scalar(0, 255, 0), 30);
+    }
+    for (int i = 0; i < vertexSet.size(); ++i) {
+        Point pt = Point(vertexSet[i].x, vertexSet[i].y);
+        circle(outputImage, pt, 30, Scalar(0, 0, 255), -1);
+    }
+}
+
+void mostIntersections(vector<Vec4f> lines, vector<Vertex> &topVertexSet, int topVertexNum, int imgW, int imgH){
+    //获取所有直线的交点和相交次数
+    vector<Vertex> vertexSet;
     for (unsigned int i = 0; i<lines.size(); i++)
     {
         for (unsigned int j = i + 1; j<lines.size(); j++)
@@ -382,12 +383,16 @@ void threeSides(vector<Vec4f> lines, vector<Vertex> &vertexSet, vector<Vertex> &
 
         }
     }
+/*    //绘制所有交点
+    for (int i = 0; i < vertexSet.size(); ++i) {
+        cout << "(" << vertexSet[i].x << ", " << vertexSet[i].y << ")" << vertexSet[i].crossTimes << endl;
+        circle(outputImage, Point(vertexSet[i].x, vertexSet[i].y), 10, Scalar(0, 0, 255), -1);
+    }*/
 
-    //找相交次数最多的6个点
+    //找相交次数最多的topVertexNum个点
     int max = 0;
     int maxUnder = -1;
-
-    while (top6vertexSet.size() < 6) {
+    while (topVertexSet.size() < topVertexNum) {
         max = 0;
         for (int i = 0; i < vertexSet.size(); i++) {
             if (vertexSet[i].crossTimes > max) {
@@ -395,10 +400,71 @@ void threeSides(vector<Vec4f> lines, vector<Vertex> &vertexSet, vector<Vertex> &
                 maxUnder = i;
             }
         }
-        top6vertexSet.push_back(vertexSet[maxUnder]);
+        topVertexSet.push_back(vertexSet[maxUnder]);
         vertexSet[maxUnder].crossTimes = -1;
     }
+}
 
+void pointColor(Mat image, vector<Vertex> inputVertexSet, vector<Vertex> &outputVertexSet){
+    int imgW = image.cols;
+    int imgH = image.rows;
+
+    Mat hsvImage;
+    cvtColor(image, hsvImage, CV_BGR2HSV); //bgr转hsv
+
+    for (int i = 0; i < inputVertexSet.size(); ++i) {
+        int x = inputVertexSet[i].x;
+        int y = inputVertexSet[i].y;
+        //TODO 如何精简
+        if(x < 0)
+            inputVertexSet[i].x = 0;
+        if(x > imgW)
+            inputVertexSet[i].x = imgW;
+        if(y < 0)
+            inputVertexSet[i].y = 0;
+        if(y > imgH)
+            inputVertexSet[i].y = imgH;
+        int range = 200; //TODO 参数range
+        int flag = 0;
+        //注意不要超出画面边界
+        int xMin = x-range;
+        int xMax = x+range;
+        int yMin = y-range;
+        int yMax = y+range;
+        if(xMin < 0)
+            xMin = 0;
+        if(xMin > imgW)
+            xMin = imgW-10;
+        if(xMax < 0)
+            xMax = 10;
+        if(xMax > imgW)
+            xMax = imgW;
+        if(yMin < 0)
+            yMin = 0;
+        if(yMin > imgH)
+            yMin = imgH-10;
+        if(yMax < 0)
+            yMax = 10;
+        if(yMax > imgH)
+            yMax = imgH;
+        //看交点是否为黄色
+        for (int j = xMin; j < xMax ; j = j+5) {
+            for (int k = yMin; k < yMax; k = k+5) {
+                int h = hsvImage.at<Vec3b>(k, j)[0];
+                int s = hsvImage.at<Vec3b>(k, j)[1];
+                int v = hsvImage.at<Vec3b>(k, j)[2];
+                if((h > hmin && h < hmax) &&
+                   (s > smin && s < smax) &&
+                   (v > vmin && v < vmax)){
+                    outputVertexSet.push_back(inputVertexSet[i]);
+                    flag = 1;
+                    break;
+                }
+            }
+            if(flag == 1)
+                break;
+        }
+    }
 }
 
 
